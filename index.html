@@ -3,26 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Tic‑Tac‑Toe — Offline + Online (P2P)</title>
-  <meta name="description" content="Two‑player Tic‑Tac‑Toe with offline local play, auto online signaling via Firebase, optional TURN fallback, and manual copy‑paste mode. 100% GitHub Pages compatible." />
-  <!-- MIT License (2025). See repo for details. -->
+  <title>Tic‑Tac‑Toe — Offline + Online (WebRTC + WS)</title>
+  <meta name="description" content="Two‑player Tic‑Tac‑Toe with local play, manual copy‑paste P2P, and auto signaling over WebSocket (no Firebase). TURN optional. 100% GitHub Pages compatible." />
+  <!-- MIT License (2025). -->
   <style>
-    :root {
-      --bg: #f6f7fb; --fg: #0f172a; --muted: #64748b; --accent: #3b82f6; --accent-2: #2563eb; --win: #16a34a;
-      --cell-bg: #fff; --card-bg: #fff; --border: #e5e7eb; --shadow: 0 10px 20px rgba(2,6,23,.06), 0 2px 6px rgba(2,6,23,.04); --radius: 16px;
-    }
-    :root[data-theme="dark"] {
-      --bg: #0b1220; --fg: #e5e7eb; --muted: #a1a1aa; --accent: #60a5fa; --accent-2: #3b82f6; --win: #22c55e;
-      --cell-bg: #0f172a; --card-bg: #0b1220; --border: #1f2937; --shadow: 0 10px 20px rgba(0,0,0,.35), 0 2px 6px rgba(0,0,0,.25);
-    }
+    :root { --bg:#f6f7fb; --fg:#0f172a; --muted:#64748b; --accent:#3b82f6; --accent-2:#2563eb; --win:#16a34a; --cell-bg:#fff; --card-bg:#fff; --border:#e5e7eb; --shadow:0 10px 20px rgba(2,6,23,.06),0 2px 6px rgba(2,6,23,.04); --radius:16px }
+    :root[data-theme="dark"] { --bg:#0b1220; --fg:#e5e7eb; --muted:#a1a1aa; --accent:#60a5fa; --accent-2:#3b82f6; --win:#22c55e; --cell-bg:#0f172a; --card-bg:#0b1220; --border:#1f2937; --shadow:0 10px 20px rgba(0,0,0,.35),0 2px 6px rgba(0,0,0,.25) }
     *{box-sizing:border-box} html,body{height:100%}
-    body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; color:var(--fg);
-      background: radial-gradient(1200px 800px at 20% -10%, rgba(59,130,246,.12), transparent 50%),
-                  radial-gradient(1000px 900px at 120% 10%, rgba(22,163,74,.10), transparent 50%), var(--bg);
-      display:grid;place-items:center;padding:24px}
-    .wrap{width:min(1050px,100%);background:linear-gradient(180deg,rgba(255,255,255,.45),rgba(255,255,255,.1));
-      background-clip:padding-box;border:1px solid var(--border);border-radius:calc(var(--radius)+6px);box-shadow:var(--shadow);
-      padding:clamp(16px,2vw,24px);backdrop-filter:blur(6px)}
+    body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;color:var(--fg);background:radial-gradient(1200px 800px at 20% -10%, rgba(59,130,246,.12), transparent 50%),radial-gradient(1000px 900px at 120% 10%, rgba(22,163,74,.10), transparent 50%),var(--bg);display:grid;place-items:center;padding:24px}
+    .wrap{width:min(1050px,100%);background:linear-gradient(180deg,rgba(255,255,255,.45),rgba(255,255,255,.1));background-clip:padding-box;border:1px solid var(--border);border-radius:calc(var(--radius)+6px);box-shadow:var(--shadow);padding:clamp(16px,2vw,24px);backdrop-filter:blur(6px)}
     .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--border)}
     .top h1{font-size:clamp(1.25rem,2.5vw,1.8rem);margin:0;letter-spacing:.3px}
     .icon-btn{border:1px solid var(--border);background:var(--card-bg);border-radius:999px;padding:8px 12px;font-size:18px;cursor:pointer;box-shadow:var(--shadow)}
@@ -38,9 +27,7 @@
     .card span{font-weight:700;font-feature-settings:"tnum" 1, "lnum" 1}
 
     .board{margin:18px 0;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:min(520px,95%)}
-    .cell{aspect-ratio:1/1;border:1px solid var(--border);border-radius:calc(var(--radius)+4px);background:var(--cell-bg);box-shadow:var(--shadow);
-      font-weight:800;font-size:clamp(2.2rem,8.5vw,4rem);line-height:1;color:var(--fg);display:grid;place-items:center;cursor:pointer;
-      transition:transform 120ms ease, box-shadow 120ms ease, background 200ms ease;user-select:none}
+    .cell{aspect-ratio:1/1;border:1px solid var(--border);border-radius:calc(var(--radius)+4px);background:var(--cell-bg);box-shadow:var(--shadow);font-weight:800;font-size:clamp(2.2rem,8.5vw,4rem);line-height:1;color:var(--fg);display:grid;place-items:center;cursor:pointer;transition:transform 120ms ease, box-shadow 120ms ease, background 200ms ease;user-select:none}
     .cell:hover{transform:translateY(-1px)} .cell:active{transform:translateY(0)} .cell:focus{outline:2px solid var(--accent);outline-offset:2px}
     .cell.x{color:var(--accent-2)} .cell.o{color:#ef4444} .cell.win{background:linear-gradient(180deg,rgba(34,197,94,.18),rgba(34,197,94,.06));border-color:rgba(34,197,94,.45)}
     .cell:disabled{cursor:not-allowed;opacity:.9}
@@ -90,21 +77,23 @@
 
       <aside class="online" aria-label="Online play">
         <div class="tabs">
-          <button id="tabAuto" class="tab active" type="button">Auto (Firebase)</button>
+          <button id="tabAuto" class="tab active" type="button">Auto (WebSocket)</button>
           <button id="tabManual" class="tab" type="button">Manual (Code)</button>
         </div>
 
+        <!-- Auto (WS) -->
         <div id="autoPane">
-          <div id="autoStatus" class="small">Auto signaling: <b>disabled</b> (no Firebase config).</div>
+          <div id="autoStatus" class="small">Auto signaling: <b>disabled</b> (set WS URL below).</div>
           <div class="row" style="margin:10px 0">
             <button id="autoHostBtn" class="btn" type="button" disabled>Create room</button>
             <input id="roomInput" type="text" placeholder="Room code" size="12" aria-label="Room code" />
             <button id="autoJoinBtn" class="btn secondary" type="button" disabled>Join room</button>
             <button id="autoDisconnectBtn" class="btn ghost" type="button" disabled>Disconnect</button>
           </div>
-          <div class="small">Once connected, host is <b>X</b> and starts. Rooms self‑clean when both sides disconnect.</div>
+          <div class="small">Share the 6‑char room code. Host is <b>X</b>.</div>
         </div>
 
+        <!-- Manual (copy‑paste) -->
         <div id="manualPane" style="display:none">
           <div id="onlineStatus" class="small">Manual P2P: Offline</div>
           <div class="row" style="margin:10px 0">
@@ -112,9 +101,7 @@
             <button id="joinBtn" class="btn secondary" type="button">Join game</button>
             <button id="disconnectBtn" class="btn ghost" type="button" disabled>Disconnect</button>
           </div>
-          <div class="small" style="margin-bottom:8px">
-            Copy‑paste signaling: share the host code, paste back the answer.
-          </div>
+          <div class="small" style="margin-bottom:8px">Copy‑paste signaling: share the host code, paste back the answer.</div>
           <label for="signalBox" class="small">Connection code</label>
           <textarea id="signalBox" spellcheck="false" placeholder="Code appears here…"></textarea>
           <div class="row">
@@ -123,30 +110,25 @@
             <button id="acceptBtn" class="btn secondary" type="button" disabled>Accept Answer</button>
           </div>
         </div>
-        <div class="small" style="margin-top:10px">Connectivity: STUN by default. Optional TURN is supported if configured below.</div>
+        <div class="small" style="margin-top:10px">Connectivity: STUN by default. Optional TURN is supported via the config below.</div>
       </aside>
     </main>
   </div>
 
-  <!-- Optional: inline config blocks. Replace placeholders and the app auto‑enables. -->
-  <script type="application/json" id="firebase-config">{
-    "apiKey": "AIzaSyALNqzGL9tv-6OSmEzfgDPFbMba66wUmDU",
-    "authDomain": "tic-tac-toe-7f3c1.firebaseapp.com",
-    "projectId": "tic-tac-toe-7f3c1",
-    "storageBucket": "tic-tac-toe-7f3c1.firebasestorage.app",
-    "messagingSenderId": "1048557798443",
-    "appId": "1:1048557798443:web:e195dfd2d37c5268c4966e",
-    "measurementId": "G-E473B2KT1J"
-  }</script>
+  <!-- Optional TURN config -->
   <script type="application/json" id="turn-config">{
     "iceServers": [
       {"urls": ["stun:stun.l.google.com:19302"]}
       /* Optionally add: {"urls":["turn:your.turn:3478"],"username":"user","credential":"pass"} */
     ]
   }</script>
+  <!-- WebSocket signaling endpoint -->
+  <script type="application/json" id="ws-config">{
+    "url": "wss://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev/ws"
+  }</script>
 
   <script type="module">
-    // --- Utilities -----------------------------------------------------------
+    // --- Common UI refs -----------------------------------------------------
     const Q = (sel) => document.querySelector(sel);
     const boardEl = Q('#board');
     const statusEl = Q('#status');
@@ -167,7 +149,7 @@
     const connectBtn = Q('#connectBtn');
     const acceptBtn = Q('#acceptBtn');
 
-    // Auto (Firebase) UI
+    // Auto (WS) UI
     const tabAuto = Q('#tabAuto');
     const tabManual = Q('#tabManual');
     const autoPane = Q('#autoPane');
@@ -178,7 +160,7 @@
     const autoDisconnectBtn = Q('#autoDisconnectBtn');
     const roomInput = Q('#roomInput');
 
-    // Tab logic
+    // Tabs
     tabAuto.addEventListener('click', () => { tabAuto.classList.add('active'); tabManual.classList.remove('active'); autoPane.style.display='block'; manualPane.style.display='none'; });
     tabManual.addEventListener('click', () => { tabManual.classList.add('active'); tabAuto.classList.remove('active'); manualPane.style.display='block'; autoPane.style.display='none'; });
 
@@ -239,14 +221,18 @@
     const applyTheme=(m)=>{ document.documentElement.dataset.theme=m; themeBtn.textContent=(m==='light')?'🌙':'☀️'; themeBtn.setAttribute('aria-label',`Switch to ${(m==='light')?'dark':'light'} theme`); };
     applyTheme(theme); themeBtn.addEventListener('click',()=>{ theme=(theme==='light')?'dark':'light'; localStorage.setItem('tttTheme',theme); applyTheme(theme); });
 
-    // Common WebRTC helpers
+    // --- WebRTC helpers -----------------------------------------------------
     const defaultIce = [{urls:'stun:stun.l.google.com:19302'}];
     let iceServers = defaultIce;
     try { const turn = JSON.parse(Q('#turn-config')?.textContent||'{}'); if (turn.iceServers && Array.isArray(turn.iceServers)) iceServers = turn.iceServers; } catch {}
 
     function makePeer(){
       const pc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 0 });
-      pc.onconnectionstatechange = () => { if(['failed','disconnected','closed'].includes(pc.connectionState)){ online=false; uiOnline(false); setManualStatus(pc.connectionState); setAutoStatus(pc.connectionState); } };
+      pc.onconnectionstatechange = () => {
+        if(['failed','disconnected','closed'].includes(pc.connectionState)){
+          online=false; uiOnline(false); setManualStatus(pc.connectionState); setAutoStatus(pc.connectionState);
+        }
+      };
       return pc;
     }
     function bindChannel(channel){
@@ -266,17 +252,16 @@
     function renderFromState(){ cells.forEach((b,i)=>{ b.textContent=board[i]||''; b.classList.remove('x','o','win'); if(board[i]) b.classList.add(board[i].toLowerCase()); }); const w=winner(); if(w) highlight(w.combo); }
     function send(m){ try{ if(dc && dc.readyState==='open') dc.send(JSON.stringify(m)); }catch{} }
     async function waitIceComplete(pc){ if(pc.iceGatheringState==='complete') return; await new Promise(res=>{ const f=()=>{ if(pc.iceGatheringState==='complete'){ pc.removeEventListener('icegatheringstatechange',f); res(); } }; pc.addEventListener('icegatheringstatechange',f); }); }
-    function uiOnline(on){ disconnectBtn && (disconnectBtn.disabled=!on); autoDisconnectBtn && (autoDisconnectBtn.disabled=!on); }
+    function uiOnline(on){ if(disconnectBtn) disconnectBtn.disabled=!on; if(autoDisconnectBtn) autoDisconnectBtn.disabled=!on; }
     function cleanupPeer(){ if(dc){try{dc.close()}catch{} dc=null;} if(rtc){try{rtc.close()}catch{} rtc=null;} online=false; uiOnline(false); }
 
-    // ------------------- Manual (copy‑paste) mode ---------------------------
+    // --- Manual (copy‑paste) signaling -------------------------------------
     const setManualStatus = (txt) => { if(onlineStatusEl) onlineStatusEl.textContent = `Manual P2P: ${txt}`; };
     const setSignalText = (obj) => { try{ signalBox.value=btoa(JSON.stringify(obj)); }catch(e){ signalBox.value='Encoding failed: '+(e?.message||e); } };
     const getSignalText = () => { const raw=(signalBox.value||'').trim(); if(!raw) return null; try{ return JSON.parse(atob(raw)); }catch{ return null; } };
 
     if (hostBtn) hostBtn.addEventListener('click', async () => {
-      try {
-        cleanupPeer(); isHost=true; myMark='X'; rtc=makePeer(); const ch=rtc.createDataChannel('moves'); bindChannel(ch);
+      try { cleanupPeer(); isHost=true; myMark='X'; rtc=makePeer(); const ch=rtc.createDataChannel('moves'); bindChannel(ch);
         const offer=await rtc.createOffer({offerToReceiveAudio:false,offerToReceiveVideo:false}); await rtc.setLocalDescription(offer); await waitIceComplete(rtc);
         setSignalText({sdp:rtc.localDescription}); connectBtn.disabled=true; acceptBtn.disabled=false; setManualStatus('Share host code. Paste answer then Accept.');
       } catch(e){ setManualStatus('Host error: '+(e?.message||e)); }
@@ -284,103 +269,166 @@
 
     if (joinBtn) joinBtn.addEventListener('click', () => { cleanupPeer(); isHost=false; myMark='O'; rtc=makePeer(); rtc.ondatachannel=(ev)=>bindChannel(ev.channel); connectBtn.disabled=false; acceptBtn.disabled=true; setManualStatus('Paste host code → Connect to produce answer.'); });
 
-    if (connectBtn) connectBtn.addEventListener('click', async () => {
-      try { if(!rtc) return; const p=getSignalText(); if(!p||!p.sdp) return setManualStatus('Invalid host code');
-        await rtc.setRemoteDescription(p.sdp); const ans=await rtc.createAnswer(); await rtc.setLocalDescription(ans); await waitIceComplete(rtc); setSignalText({sdp:rtc.localDescription}); setManualStatus('Send answer to host.');
-      } catch(e){ setManualStatus('Join error: '+(e?.message||e)); }
-    });
+    if (connectBtn) connectBtn.addEventListener('click', async () => { try { if(!rtc) return; const p=getSignalText(); if(!p||!p.sdp) return setManualStatus('Invalid host code'); await rtc.setRemoteDescription(p.sdp); const ans=await rtc.createAnswer(); await rtc.setLocalDescription(ans); await waitIceComplete(rtc); setSignalText({sdp:rtc.localDescription}); setManualStatus('Send answer to host.'); } catch(e){ setManualStatus('Join error: '+(e?.message||e)); } });
 
     if (acceptBtn) acceptBtn.addEventListener('click', async () => { try{ if(!rtc) return; const p=getSignalText(); if(!p||!p.sdp) return setManualStatus('Invalid answer'); await rtc.setRemoteDescription(p.sdp); setManualStatus('Answer accepted.'); }catch(e){ setManualStatus('Accept error: '+(e?.message||e)); }});
 
     if (copyCodeBtn) copyCodeBtn.addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(signalBox.value); copyCodeBtn.textContent='Copied'; setTimeout(()=>copyCodeBtn.textContent='Copy',900); }catch{} });
     if (disconnectBtn) disconnectBtn.addEventListener('click', ()=>{ cleanupPeer(); setManualStatus('Disconnected'); });
 
-    // ------------------- Auto signaling (Firebase) -------------------------
+    // --- Auto signaling over WebSocket (no backend state) ------------------
     const setAutoStatus = (txt) => autoStatus.textContent = `Auto signaling: ${txt}`;
-
     function readConfig(id){ try{ return JSON.parse(Q(id)?.textContent||'{}'); }catch{ return {}; } }
-    const fbConfig = readConfig('#firebase-config');
+    const wsConf = readConfig('#ws-config');
 
-    let db=null, FS=null; // Firestore
-    async function initFirebase(){
-      if(!fbConfig.apiKey || String(fbConfig.apiKey).includes('YOUR_')) return false;
-      try{
-        // Import App, Analytics and Firestore from the Firebase CDN (browser-friendly ESM)
-        const appMod = await import('https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js');
-        const analyticsMod = await import('https://www.gstatic.com/firebasejs/10.12.3/firebase-analytics.js');
-        FS = await import('https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js');
-
-        // Initialize app and analytics
-        const app = appMod.initializeApp(fbConfig);
-        try { analyticsMod.getAnalytics(app); } catch(e) { /* analytics may be blocked in some envs */ }
-
-        db = FS.getFirestore(app);
-        return true;
-      }catch(e){ setAutoStatus('failed to load SDK'); console.error(e); return false; }
-    }
+    let ws=null, roomId=null;
 
     function randRoom(){ const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<6;i++) s+=a[Math.floor(Math.random()*a.length)]; return s; }
 
-    async function autoHost(){
-      cleanupPeer(); isHost=true; myMark='X'; rtc=makePeer(); const ch=rtc.createDataChannel('moves'); bindChannel(ch);
-      const roomId = randRoom();
-      const roomRef = FS.doc(db, 'rooms', roomId);
-      const offer = await rtc.createOffer(); await rtc.setLocalDescription(offer); await waitIceComplete(rtc);
-      await FS.setDoc(roomRef, { offer: JSON.stringify(rtc.localDescription), created: Date.now() });
-
-      const callerCandidates = FS.collection(roomRef, 'callerCandidates');
-      rtc.onicecandidate = async (e) => { if(e.candidate) await FS.addDoc(callerCandidates, { c: e.candidate.toJSON() }); };
-
-      const unsub = FS.onSnapshot(roomRef, async (snap)=>{
-        const data=snap.data(); if(!data) return;
-        if(data.answer && rtc.currentRemoteDescription==null){ await rtc.setRemoteDescription(JSON.parse(data.answer)); setAutoStatus(`connected (room ${roomId})`); }
+    function connectWS(id){
+      return new Promise((resolve,reject)=>{
+        try{
+          if(!wsConf.url || wsConf.url.startsWith('wss://YOUR-')) { setAutoStatus('disabled (set ws-config URL)'); return reject(new Error('WS URL missing')); }
+          const u = new URL(wsConf.url); u.searchParams.set('room', id);
+          ws = new WebSocket(u.toString());
+          ws.onopen = ()=>{ setAutoStatus(`connected to room ${id}`); resolve(); };
+          ws.onerror = (e)=>{ setAutoStatus('ws error'); reject(e); };
+          ws.onclose = ()=>{ setAutoStatus('ws closed'); };
+          ws.onmessage = (ev)=>{ try{ handleSignal(JSON.parse(ev.data)); }catch{} };
+        }catch(e){ reject(e); }
       });
+    }
 
-      const calleeCandidates = FS.collection(roomRef, 'calleeCandidates');
-      const unsubCand = FS.onSnapshot(calleeCandidates, (qs)=>qs.docChanges().forEach(async (ch)=>{ if(ch.type==='added'){ try{ await rtc.addIceCandidate(ch.doc.data().c); }catch{} } }));
+    function wsSend(msg){ try{ if(ws && ws.readyState===1) ws.send(JSON.stringify(msg)); }catch{} }
 
-      autoDisconnectBtn.onclick = async ()=>{ try{ unsub(); unsubCand(); await FS.deleteDoc(roomRef); }catch{} cleanupPeer(); setAutoStatus('Disconnected'); };
-      roomInput.value = roomId; setAutoStatus(`room ${roomId} — share code`);
+    async function autoHost(){
+      try{
+        cleanupPeer();
+        isHost = true; myMark = 'X';
+        // show a code IMMEDIATELY (no waiting on ICE)
+        const roomId = (roomInput.value||'').trim().toUpperCase() || randRoom();
+        roomInput.value = roomId;
+        setAutoStatus(`room ${roomId} — creating…`);
+
+        rtc = makePeer();
+        const ch = rtc.createDataChannel('moves');
+        bindChannel(ch);
+
+        const roomRef = FS.doc(db, 'rooms', roomId);
+
+        // write local ICE candidates to subcollection
+        const callerCandidates = FS.collection(roomRef, 'callerCandidates');
+        rtc.onicecandidate = async (e)=>{
+          if(e.candidate){
+            try{ await FS.addDoc(callerCandidates, { c: e.candidate.toJSON() }); }
+            catch(err){ console.error('add caller candidate failed', err); }
+          }
+        };
+
+        // create and publish offer without blocking on ICE gather
+        const offer = await rtc.createOffer();
+        await rtc.setLocalDescription(offer);
+        try{
+          await FS.setDoc(roomRef, { offer: JSON.stringify(rtc.localDescription), created: Date.now() });
+        }catch(err){
+          console.error('setDoc failed', err);
+          setAutoStatus('permission error (Firestore rules?)');
+          return;
+        }
+
+        // listen for answer
+        const unsub = FS.onSnapshot(roomRef, async (snap)=>{
+          const data=snap.data(); if(!data) return;
+          if(data.answer && rtc.currentRemoteDescription==null){
+            try{ await rtc.setRemoteDescription(JSON.parse(data.answer)); setAutoStatus(`connected (room ${roomId})`); }
+            catch(err){ console.error('setRemoteDescription failed', err); }
+          }
+        });
+
+        // read callee ICE
+        const calleeCandidates = FS.collection(roomRef, 'calleeCandidates');
+        const unsubCand = FS.onSnapshot(calleeCandidates, (qs)=>qs.docChanges().forEach(async (ch)=>{
+          if(ch.type==='added'){
+            try{ await rtc.addIceCandidate(ch.doc.data().c); }
+            catch(err){ console.error('addIceCandidate failed', err); }
+          }
+        }));
+
+        autoDisconnectBtn.disabled=false;
+        autoHostBtn.disabled=true; autoJoinBtn.disabled=true;
+        autoDisconnectBtn.onclick = async ()=>{
+          try{ unsub(); unsubCand(); await FS.deleteDoc(roomRef); }
+          catch(err){ console.warn('room cleanup error', err); }
+          cleanupPeer();
+          setAutoStatus('Disconnected');
+          autoHostBtn.disabled=false; autoJoinBtn.disabled=false; autoDisconnectBtn.disabled=true;
+        };
+
+        setAutoStatus(`room ${roomId} — share code`);
+      }catch(e){
+        console.error(e);
+        setAutoStatus('host error: ' + (e?.message||e));
+      }
+    }); };
+      const offer = await rtc.createOffer(); await rtc.setLocalDescription(offer); await waitIceComplete(rtc);
+      wsSend({ type:'offer', sdp: rtc.localDescription });
+      // If a joiner connects later and says hello, resend
+      setAutoStatus(`room ${roomId} — waiting for joiner`);
+      roomInput.value = roomId;
     }
 
     async function autoJoin(){
-      const roomId = (roomInput.value||'').trim().toUpperCase(); if(!roomId) return setAutoStatus('room code required');
-      cleanupPeer(); isHost=false; myMark='O'; rtc=makePeer();
+      const code = (roomInput.value||'').trim().toUpperCase();
+      if(!code) { setAutoStatus('room code required'); return; }
+      cleanupPeer(); isHost=false; myMark='O'; roomId = code;
+      await connectWS(roomId);
+      rtc=makePeer();
       rtc.ondatachannel = (ev)=>bindChannel(ev.channel);
-      const roomRef = FS.doc(db, 'rooms', roomId);
-      const snap = await FS.getDoc(roomRef); if(!snap.exists()) return setAutoStatus('room not found');
-      const data = snap.data(); if(!data.offer) return setAutoStatus('invalid room');
-      await rtc.setRemoteDescription(JSON.parse(data.offer));
-      const answer = await rtc.createAnswer(); await rtc.setLocalDescription(answer); await waitIceComplete(rtc);
-      await FS.updateDoc(roomRef, { answer: JSON.stringify(rtc.localDescription), answered: Date.now() });
-
-      const calleeCandidates = FS.collection(roomRef, 'calleeCandidates');
-      rtc.onicecandidate = async (e)=>{ if(e.candidate) await FS.addDoc(calleeCandidates, { c: e.candidate.toJSON() }); };
-
-      const callerCandidates = FS.collection(roomRef, 'callerCandidates');
-      const unsubCand = FS.onSnapshot(callerCandidates, (qs)=>qs.docChanges().forEach(async (ch)=>{ if(ch.type==='added'){ try{ await rtc.addIceCandidate(ch.doc.data().c); }catch{} } }));
-
-      autoDisconnectBtn.onclick = async ()=>{ try{ unsubCand(); /* keep room for host cleanup */ }catch{} cleanupPeer(); setAutoStatus('Disconnected'); };
-      setAutoStatus(`joining room ${roomId}…`);
+      rtc.onicecandidate = (e)=>{ if(e.candidate) wsSend({type:'candidate', candidate:e.candidate.toJSON()}); };
+      // Ask host to (re)send offer
+      wsSend({ type:'hello' });
+      setAutoStatus(`joined room ${roomId}, waiting for offer…`);
     }
 
-    // Init auto mode
+    async function handleSignal(msg){
+      if(!rtc) return;
+      switch(msg.type){
+        case 'hello':
+          if(isHost && rtc.localDescription) wsSend({ type:'offer', sdp: rtc.localDescription });
+          break;
+        case 'offer':
+          if(!isHost){
+            await rtc.setRemoteDescription(msg.sdp);
+            const ans = await rtc.createAnswer(); await rtc.setLocalDescription(ans); await waitIceComplete(rtc);
+            wsSend({ type:'answer', sdp: rtc.localDescription });
+          }
+          break;
+        case 'answer':
+          if(isHost && !rtc.currentRemoteDescription){ await rtc.setRemoteDescription(msg.sdp); }
+          break;
+        case 'candidate':
+          try{ await rtc.addIceCandidate(msg.candidate); }catch{}
+          break;
+      }
+    }
+
+    function wireAutoUI(ok){
+      if(ok){ autoStatus.innerHTML='ready'; autoHostBtn.disabled=false; autoJoinBtn.disabled=false; autoDisconnectBtn.disabled=true; }
+      else { autoStatus.innerHTML='<b>disabled</b> (set ws-config URL in HTML)'; }
+      autoHostBtn.onclick = async ()=>{ try{ await autoHost(); autoDisconnectBtn.disabled=false; }catch(e){ setAutoStatus('host error'); } };
+      autoJoinBtn.onclick = async ()=>{ try{ await autoJoin(); autoDisconnectBtn.disabled=false; }catch(e){ setAutoStatus('join error'); } };
+      autoDisconnectBtn.onclick = ()=>{ try{ ws && ws.close(); }catch{} cleanupPeer(); setAutoStatus('Disconnected'); };
+    }
+
+    // Init
     (async () => {
       renderScores();
       resetBoard({ keepStarter:true });
-
-      // observe status text to append role in online
       const mo = new MutationObserver(()=>{ if(online) statusEl.textContent = `${current}'s turn — You are ${myMark}`; });
       mo.observe(statusEl,{childList:true});
 
-      const ok = await initFirebase();
-      if(ok){
-        autoStatus.innerHTML = 'ready';
-        autoHostBtn.disabled=false; autoJoinBtn.disabled=false; autoDisconnectBtn.disabled=true;
-        autoHostBtn.onclick = autoHost; autoJoinBtn.onclick = autoJoin;
-      } else {
-        autoStatus.innerHTML = '<b>disabled</b> (add Firebase config below in the HTML to enable)';
-      }
+      const ok = !!(wsConf && wsConf.url && !wsConf.url.startsWith('wss://YOUR-'));
+      wireAutoUI(ok);
     })();
   </script>
 </body>
