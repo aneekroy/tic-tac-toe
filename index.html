@@ -130,12 +130,13 @@
 
   <!-- Optional: inline config blocks. Replace placeholders and the app auto‑enables. -->
   <script type="application/json" id="firebase-config">{
-    "apiKey": "YOUR_API_KEY",
-    "authDomain": "your-project.firebaseapp.com",
-    "projectId": "your-project-id",
-    "storageBucket": "your-project.appspot.com",
-    "messagingSenderId": "123",
-    "appId": "1:123:web:abc"
+    "apiKey": "AIzaSyALNqzGL9tv-6OSmEzfgDPFbMba66wUmDU",
+    "authDomain": "tic-tac-toe-7f3c1.firebaseapp.com",
+    "projectId": "tic-tac-toe-7f3c1",
+    "storageBucket": "tic-tac-toe-7f3c1.firebasestorage.app",
+    "messagingSenderId": "1048557798443",
+    "appId": "1:1048557798443:web:e195dfd2d37c5268c4966e",
+    "measurementId": "G-E473B2KT1J"
   }</script>
   <script type="application/json" id="turn-config">{
     "iceServers": [
@@ -304,12 +305,18 @@
     async function initFirebase(){
       if(!fbConfig.apiKey || String(fbConfig.apiKey).includes('YOUR_')) return false;
       try{
+        // Import App, Analytics and Firestore from the Firebase CDN (browser-friendly ESM)
         const appMod = await import('https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js');
+        const analyticsMod = await import('https://www.gstatic.com/firebasejs/10.12.3/firebase-analytics.js');
         FS = await import('https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js');
+
+        // Initialize app and analytics
         const app = appMod.initializeApp(fbConfig);
+        try { analyticsMod.getAnalytics(app); } catch(e) { /* analytics may be blocked in some envs */ }
+
         db = FS.getFirestore(app);
         return true;
-      }catch(e){ setAutoStatus('failed to load SDK'); return false; }
+      }catch(e){ setAutoStatus('failed to load SDK'); console.error(e); return false; }
     }
 
     function randRoom(){ const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<6;i++) s+=a[Math.floor(Math.random()*a.length)]; return s; }
