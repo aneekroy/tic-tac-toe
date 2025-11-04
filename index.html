@@ -325,11 +325,12 @@
       cleanupPeer(); isHost=true; myMark='X'; rtc=makePeer(); const ch=rtc.createDataChannel('moves'); bindChannel(ch);
       const roomId = randRoom();
       const roomRef = FS.doc(db, 'rooms', roomId);
-      const offer = await rtc.createOffer(); await rtc.setLocalDescription(offer); await waitIceComplete(rtc);
-      await FS.setDoc(roomRef, { offer: JSON.stringify(rtc.localDescription), created: Date.now() });
 
       const callerCandidates = FS.collection(roomRef, 'callerCandidates');
       rtc.onicecandidate = async (e) => { if(e.candidate) await FS.addDoc(callerCandidates, { c: e.candidate.toJSON() }); };
+
+      const offer = await rtc.createOffer(); await rtc.setLocalDescription(offer); await waitIceComplete(rtc);
+      await FS.setDoc(roomRef, { offer: JSON.stringify(rtc.localDescription), created: Date.now() });
 
       const unsub = FS.onSnapshot(roomRef, async (snap)=>{
         const data=snap.data(); if(!data) return;
@@ -339,7 +340,9 @@
       const calleeCandidates = FS.collection(roomRef, 'calleeCandidates');
       const unsubCand = FS.onSnapshot(calleeCandidates, (qs)=>qs.docChanges().forEach(async (ch)=>{ if(ch.type==='added'){ try{ await rtc.addIceCandidate(ch.doc.data().c); }catch{} } }));
 
-      autoDisconnectBtn.onclick = async ()=>{ try{ unsub(); unsubCand(); await FS.deleteDoc(roomRef); }catch{} cleanupPeer(); setAutoStatus('Disconnected'); };
+      autoDisconnectBtn.disabled=false;
+      autoHostBtn.disabled=true; autoJoinBtn.disabled=true;
+      autoDisconnectBtn.onclick = async ()=>{ try{ unsub(); unsubCand(); await FS.deleteDoc(roomRef); }catch{} cleanupPeer(); setAutoStatus('Disconnected'); autoHostBtn.disabled=false; autoJoinBtn.disabled=false; autoDisconnectBtn.disabled=true; };
       roomInput.value = roomId; setAutoStatus(`room ${roomId} — share code`);
     }
 
@@ -348,19 +351,21 @@
       cleanupPeer(); isHost=false; myMark='O'; rtc=makePeer();
       rtc.ondatachannel = (ev)=>bindChannel(ev.channel);
       const roomRef = FS.doc(db, 'rooms', roomId);
+      const calleeCandidates = FS.collection(roomRef, 'calleeCandidates');
+      rtc.onicecandidate = async (e)=>{ if(e.candidate) await FS.addDoc(calleeCandidates, { c: e.candidate.toJSON() }); };
+
       const snap = await FS.getDoc(roomRef); if(!snap.exists()) return setAutoStatus('room not found');
       const data = snap.data(); if(!data.offer) return setAutoStatus('invalid room');
       await rtc.setRemoteDescription(JSON.parse(data.offer));
       const answer = await rtc.createAnswer(); await rtc.setLocalDescription(answer); await waitIceComplete(rtc);
       await FS.updateDoc(roomRef, { answer: JSON.stringify(rtc.localDescription), answered: Date.now() });
 
-      const calleeCandidates = FS.collection(roomRef, 'calleeCandidates');
-      rtc.onicecandidate = async (e)=>{ if(e.candidate) await FS.addDoc(calleeCandidates, { c: e.candidate.toJSON() }); };
-
       const callerCandidates = FS.collection(roomRef, 'callerCandidates');
       const unsubCand = FS.onSnapshot(callerCandidates, (qs)=>qs.docChanges().forEach(async (ch)=>{ if(ch.type==='added'){ try{ await rtc.addIceCandidate(ch.doc.data().c); }catch{} } }));
 
-      autoDisconnectBtn.onclick = async ()=>{ try{ unsubCand(); /* keep room for host cleanup */ }catch{} cleanupPeer(); setAutoStatus('Disconnected'); };
+      autoDisconnectBtn.disabled=false;
+      autoHostBtn.disabled=true; autoJoinBtn.disabled=true;
+      autoDisconnectBtn.onclick = async ()=>{ try{ unsubCand(); /* keep room for host cleanup */ }catch{} cleanupPeer(); setAutoStatus('Disconnected'); autoHostBtn.disabled=false; autoJoinBtn.disabled=false; autoDisconnectBtn.disabled=true; };
       setAutoStatus(`joining room ${roomId}…`);
     }
 
