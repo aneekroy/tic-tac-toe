@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tic‑Tac‑Toe — Offline + Online (P2P)</title>
+  <meta name="description" content="Two‑player Tic‑Tac‑Toe with offline local play, auto online signaling via Firebase, optional TURN fallback, and manual copy‑paste mode. 100% GitHub Pages compatible." />
+  <!-- MIT License (2025). See repo for details. -->
+  <style>
+    :root {
+      --bg: #f6f7fb; --fg: #0f172a; --muted: #64748b; --accent: #3b82f6; --accent-2: #2563eb; --win: #16a34a;
+      --cell-bg: #fff; --card-bg: #fff; --border: #e5e7eb; --shadow: 0 10px 20px rgba(2,6,23,.06), 0 2px 6px rgba(2,6,23,.04); --radius: 16px;
+    }
+    :root[data-theme="dark"] {
+      --bg: #0b1220; --fg: #e5e7eb; --muted: #a1a1aa; --accent: #60a5fa; --accent-2: #3b82f6; --win: #22c55e;
+      --cell-bg: #0f172a; --card-bg: #0b1220; --border: #1f2937; --shadow: 0 10px 20px rgba(0,0,0,.35), 0 2px 6px rgba(0,0,0,.25);
+    }
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; color:var(--fg);
+      background: radial-gradient(1200px 800px at 20% -10%, rgba(59,130,246,.12), transparent 50%),
+                  radial-gradient(1000px 900px at 120% 10%, rgba(22,163,74,.10), transparent 50%), var(--bg);
+      display:grid;place-items:center;padding:24px}
+    .wrap{width:min(1050px,100%);background:linear-gradient(180deg,rgba(255,255,255,.45),rgba(255,255,255,.1));
+      background-clip:padding-box;border:1px solid var(--border);border-radius:calc(var(--radius)+6px);box-shadow:var(--shadow);
+      padding:clamp(16px,2vw,24px);backdrop-filter:blur(6px)}
+    .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+    .top h1{font-size:clamp(1.25rem,2.5vw,1.8rem);margin:0;letter-spacing:.3px}
+    .icon-btn{border:1px solid var(--border);background:var(--card-bg);border-radius:999px;padding:8px 12px;font-size:18px;cursor:pointer;box-shadow:var(--shadow)}
+    .icon-btn:focus{outline:2px solid var(--accent);outline-offset:2px}
+
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+    @media (max-width: 900px){.grid2{grid-template-columns:1fr}}
+
+    .hud{display:grid;gap:14px;padding:16px 0 8px}
+    .status{font-weight:600;font-size:clamp(1rem,2vw,1.15rem);color:var(--accent-2)}
+    .scores{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:12px}
+    .card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;font-size:.95rem}
+    .card span{font-weight:700;font-feature-settings:"tnum" 1, "lnum" 1}
+
+    .board{margin:18px 0;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:min(520px,95%)}
+    .cell{aspect-ratio:1/1;border:1px solid var(--border);border-radius:calc(var(--radius)+4px);background:var(--cell-bg);box-shadow:var(--shadow);
+      font-weight:800;font-size:clamp(2.2rem,8.5vw,4rem);line-height:1;color:var(--fg);display:grid;place-items:center;cursor:pointer;
+      transition:transform 120ms ease, box-shadow 120ms ease, background 200ms ease;user-select:none}
+    .cell:hover{transform:translateY(-1px)} .cell:active{transform:translateY(0)} .cell:focus{outline:2px solid var(--accent);outline-offset:2px}
+    .cell.x{color:var(--accent-2)} .cell.o{color:#ef4444} .cell.win{background:linear-gradient(180deg,rgba(34,197,94,.18),rgba(34,197,94,.06));border-color:rgba(34,197,94,.45)}
+    .cell:disabled{cursor:not-allowed;opacity:.9}
+
+    .controls{display:flex;flex-wrap:wrap;gap:10px;padding-top:4px}
+    .btn{appearance:none;border:1px solid var(--border);background:linear-gradient(180deg,var(--accent),var(--accent-2));color:white;padding:10px 14px;border-radius:999px;font-weight:700;letter-spacing:.3px;cursor:pointer;box-shadow:var(--shadow)}
+    .btn.secondary{background:var(--card-bg);color:var(--fg)} .btn.ghost{background:transparent;color:var(--fg)}
+    .btn:focus{outline:2px solid var(--accent);outline-offset:2px}
+
+    .online{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow)}
+    .tabs{display:flex;gap:8px;margin-bottom:10px}
+    .tab{border:1px solid var(--border);padding:6px 10px;border-radius:999px;background:var(--card-bg);cursor:pointer}
+    .tab.active{background:var(--accent);color:white;border-color:transparent}
+    .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    input[type=text]{border:1px solid var(--border);background:var(--cell-bg);color:var(--fg);padding:8px 10px;border-radius:10px}
+    textarea{width:100%;min-height:84px;border-radius:12px;border:1px solid var(--border);background:var(--cell-bg);color:var(--fg);padding:10px;font-family:ui-monospace,Consolas,Menlo,monospace}
+    .small{font-size:12px;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <h1>Tic‑Tac‑Toe — Two Players</h1>
+      <button id="themeBtn" class="icon-btn" type="button" aria-label="Toggle theme">🌙</button>
+    </header>
+
+    <main class="grid2">
+      <section>
+        <section class="hud">
+          <div id="status" class="status" aria-live="polite">X's turn</div>
+          <div class="scores" aria-label="Scoreboard">
+            <div class="card">X Wins <span id="xScore">0</span></div>
+            <div class="card">Draws <span id="tScore">0</span></div>
+            <div class="card">O Wins <span id="oScore">0</span></div>
+          </div>
+        </section>
+
+        <section id="board" class="board" role="grid" aria-label="Tic Tac Toe board"><!-- cells by JS --></section>
+
+        <section class="controls">
+          <button id="resetBtn" class="btn" type="button">Next Round</button>
+          <button id="newBtn" class="btn secondary" type="button">New Match</button>
+        </section>
+
+        <div class="small" style="margin-top:8px">Local two‑player works offline. Keys <b>1–9</b> also play.</div>
+      </section>
+
+      <aside class="online" aria-label="Online play">
+        <div class="tabs">
+          <button id="tabAuto" class="tab active" type="button">Auto (Firebase)</button>
+          <button id="tabManual" class="tab" type="button">Manual (Code)</button>
+        </div>
+
+        <div id="autoPane">
+          <div id="autoStatus" class="small">Auto signaling: <b>disabled</b> (no Firebase config).</div>
+          <div class="row" style="margin:10px 0">
+            <button id="autoHostBtn" class="btn" type="button" disabled>Create room</button>
+            <input id="roomInput" type="text" placeholder="Room code" size="12" aria-label="Room code" />
+            <button id="autoJoinBtn" class="btn secondary" type="button" disabled>Join room</button>
+            <button id="autoDisconnectBtn" class="btn ghost" type="button" disabled>Disconnect</button>
+          </div>
+          <div class="small">Once connected, host is <b>X</b> and starts. Rooms self‑clean when both sides disconnect.</div>
+        </div>
+
+        <div id="manualPane" style="display:none">
+          <div id="onlineStatus" class="small">Manual P2P: Offline</div>
+          <div class="row" style="margin:10px 0">
+            <button id="hostBtn" class="btn" type="button">Host game</button>
+            <button id="joinBtn" class="btn secondary" type="button">Join game</button>
+            <button id="disconnectBtn" class="btn ghost" type="button" disabled>Disconnect</button>
+          </div>
+          <div class="small" style="margin-bottom:8px">
+            Copy‑paste signaling: share the host code, paste back the answer.
+          </div>
+          <label for="signalBox" class="small">Connection code</label>
+          <textarea id="signalBox" spellcheck="false" placeholder="Code appears here…"></textarea>
+          <div class="row">
+            <button id="copyCodeBtn" class="btn secondary" type="button">Copy</button>
+            <button id="connectBtn" class="btn secondary" type="button" disabled>Connect</button>
+            <button id="acceptBtn" class="btn secondary" type="button" disabled>Accept Answer</button>
+          </div>
+        </div>
+        <div class="small" style="margin-top:10px">Connectivity: STUN by default. Optional TURN is supported if configured below.</div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Optional: inline config blocks. Replace placeholders and the app auto‑enables. -->
+  <script type="application/json" id="firebase-config">{
+    "apiKey": "YOUR_API_KEY",
+    "authDomain": "your-project.firebaseapp.com",
+    "projectId": "your-project-id",
+    "storageBucket": "your-project.appspot.com",
+    "messagingSenderId": "123",
+    "appId": "1:123:web:abc"
+  }</script>
+  <script type="application/json" id="turn-config">{
+    "iceServers": [
+      {"urls": ["stun:stun.l.google.com:19302"]}
+      /* Optionally add: {"urls":["turn:your.turn:3478"],"username":"user","credential":"pass"} */
+    ]
+  }</script>
+
+  <script type="module">
+    // --- Utilities -----------------------------------------------------------
+    const Q = (sel) => document.querySelector(sel);
+    const boardEl = Q('#board');
+    const statusEl = Q('#status');
+    const xScoreEl = Q('#xScore');
+    const oScoreEl = Q('#oScore');
+    const tScoreEl = Q('#tScore');
+    const resetBtn = Q('#resetBtn');
+    const newBtn = Q('#newBtn');
+    const themeBtn = Q('#themeBtn');
+
+    // Manual P2P UI
+    const onlineStatusEl = Q('#onlineStatus');
+    const hostBtn = Q('#hostBtn');
+    const joinBtn = Q('#joinBtn');
+    const disconnectBtn = Q('#disconnectBtn');
+    const signalBox = Q('#signalBox');
+    const copyCodeBtn = Q('#copyCodeBtn');
+    const connectBtn = Q('#connectBtn');
+    const acceptBtn = Q('#acceptBtn');
+
+    // Auto (Firebase) UI
+    const tabAuto = Q('#tabAuto');
+    const tabManual = Q('#tabManual');
+    const autoPane = Q('#autoPane');
+    const manualPane = Q('#manualPane');
+    const autoStatus = Q('#autoStatus');
+    const autoHostBtn = Q('#autoHostBtn');
+    const autoJoinBtn = Q('#autoJoinBtn');
+    const autoDisconnectBtn = Q('#autoDisconnectBtn');
+    const roomInput = Q('#roomInput');
+
+    // Tab logic
+    tabAuto.addEventListener('click', () => { tabAuto.classList.add('active'); tabManual.classList.remove('active'); autoPane.style.display='block'; manualPane.style.display='none'; });
+    tabManual.addEventListener('click', () => { tabManual.classList.add('active'); tabAuto.classList.remove('active'); manualPane.style.display='block'; autoPane.style.display='none'; });
+
+    // Build cells
+    const cells = Array.from({ length: 9 }, (_, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'cell'; btn.type = 'button'; btn.dataset.index = String(i); btn.setAttribute('aria-label', `Cell ${i+1}`);
+      boardEl.appendChild(btn); return btn;
+    });
+
+    // Game state
+    let board = Array(9).fill(null);
+    let current = 'X';
+    let over = false;
+    let scores = { X: 0, O: 0, T: 0 };
+
+    // Online state (shared by both manual & auto modes)
+    let rtc = null, dc = null, online = false, isHost = false, myMark = 'X';
+
+    // Scores persistence
+    try { const s = JSON.parse(localStorage.getItem('tttScores')||'null'); if (s && typeof s.X==='number') scores=s; } catch{}
+    const persistScores = () => localStorage.setItem('tttScores', JSON.stringify(scores));
+    const renderScores = () => { xScoreEl.textContent=String(scores.X); oScoreEl.textContent=String(scores.O); tScoreEl.textContent=String(scores.T); };
+    const setStatus = (t) => statusEl.textContent = t;
+
+    const WIN = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+    const winner = () => { for (const [a,b,c] of WIN){ if (board[a]&&board[a]===board[b]&&board[a]===board[c]) return {player:board[a],combo:[a,b,c]}; } return null; };
+    const highlight = (combo) => combo.forEach(i=>cells[i].classList.add('win'));
+    const disable = (d) => cells.forEach(b=>b.disabled=!!d);
+    const canPlayLocal = () => !online || (current===myMark && !over);
+
+    function handleClick(i, {fromRemote=false}={}){
+      if (over || board[i] || (!fromRemote && !canPlayLocal())) return;
+      board[i]=current; const btn=cells[i]; btn.textContent=current; btn.classList.add(current.toLowerCase());
+      const w = winner();
+      if (w){ over=true; highlight(w.combo); scores[current]+=1; renderScores(); persistScores(); setStatus(`${current} wins!`); disable(true); if(!fromRemote) send({t:'move',i}); return; }
+      if (board.every(Boolean)){ over=true; scores.T+=1; renderScores(); persistScores(); setStatus(`It's a draw.`); disable(true); if(!fromRemote) send({t:'move',i}); return; }
+      current = current==='X'?'O':'X'; setStatus(`${current}'s turn`); if(!fromRemote) send({t:'move',i});
+    }
+
+    cells.forEach((btn,i)=>btn.addEventListener('click',()=>handleClick(i)));
+    window.addEventListener('keydown',(ev)=>{ if(ev.key>='1'&&ev.key<='9'){ const idx=+ev.key-1; if(!cells[idx].disabled) cells[idx].click(); }});
+
+    function resetBoard({keepStarter=false,broadcast=false}={}){
+      board.fill(null);
+      cells.forEach(b=>{b.textContent=''; b.classList.remove('x','o','win'); b.disabled=false;});
+      over=false;
+      if(!keepStarter){ const rounds=scores.X+scores.O+scores.T; current=(rounds%2===0)?'X':'O'; }
+      setStatus(`${current}'s turn`);
+      if (broadcast) send({t:'reset'});
+    }
+
+    resetBtn.addEventListener('click',()=>resetBoard({broadcast:online}));
+    newBtn.addEventListener('click',()=>{ scores={X:0,O:0,T:0}; renderScores(); persistScores(); current='X'; resetBoard({keepStarter:true,broadcast:online}); if(online) send({t:'new'}); });
+
+    // Theme
+    const prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches; let theme=localStorage.getItem('tttTheme')||(prefersDark?'dark':'light');
+    const applyTheme=(m)=>{ document.documentElement.dataset.theme=m; themeBtn.textContent=(m==='light')?'🌙':'☀️'; themeBtn.setAttribute('aria-label',`Switch to ${(m==='light')?'dark':'light'} theme`); };
+    applyTheme(theme); themeBtn.addEventListener('click',()=>{ theme=(theme==='light')?'dark':'light'; localStorage.setItem('tttTheme',theme); applyTheme(theme); });
+
+    // Common WebRTC helpers
+    const defaultIce = [{urls:'stun:stun.l.google.com:19302'}];
+    let iceServers = defaultIce;
+    try { const turn = JSON.parse(Q('#turn-config')?.textContent||'{}'); if (turn.iceServers && Array.isArray(turn.iceServers)) iceServers = turn.iceServers; } catch {}
+
+    function makePeer(){
+      const pc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 0 });
+      pc.onconnectionstatechange = () => { if(['failed','disconnected','closed'].includes(pc.connectionState)){ online=false; uiOnline(false); setManualStatus(pc.connectionState); setAutoStatus(pc.connectionState); } };
+      return pc;
+    }
+    function bindChannel(channel){
+      dc = channel;
+      dc.onopen = () => { online=true; uiOnline(true); if(isHost) send({t:'sync',board,current,scores}); setStatus(`${current}'s turn — You are ${myMark}`); };
+      dc.onclose=()=>{ online=false; uiOnline(false); };
+      dc.onmessage=(ev)=>{ try{ onMessage(JSON.parse(ev.data)); }catch{} };
+    }
+    function onMessage(msg){
+      switch(msg.t){
+        case 'move': handleClick(msg.i,{fromRemote:true}); break;
+        case 'reset': resetBoard({keepStarter:false}); break;
+        case 'new': scores={X:0,O:0,T:0}; renderScores(); persistScores(); current='X'; resetBoard({keepStarter:true}); break;
+        case 'sync': if(!isHost){ board=msg.board.slice(); current=msg.current; scores=msg.scores; renderFromState(); renderScores(); setStatus(`${current}'s turn — You are ${myMark}`);} break;
+      }
+    }
+    function renderFromState(){ cells.forEach((b,i)=>{ b.textContent=board[i]||''; b.classList.remove('x','o','win'); if(board[i]) b.classList.add(board[i].toLowerCase()); }); const w=winner(); if(w) highlight(w.combo); }
+    function send(m){ try{ if(dc && dc.readyState==='open') dc.send(JSON.stringify(m)); }catch{} }
+    async function waitIceComplete(pc){ if(pc.iceGatheringState==='complete') return; await new Promise(res=>{ const f=()=>{ if(pc.iceGatheringState==='complete'){ pc.removeEventListener('icegatheringstatechange',f); res(); } }; pc.addEventListener('icegatheringstatechange',f); }); }
+    function uiOnline(on){ disconnectBtn && (disconnectBtn.disabled=!on); autoDisconnectBtn && (autoDisconnectBtn.disabled=!on); }
+    function cleanupPeer(){ if(dc){try{dc.close()}catch{} dc=null;} if(rtc){try{rtc.close()}catch{} rtc=null;} online=false; uiOnline(false); }
+
+    // ------------------- Manual (copy‑paste) mode ---------------------------
+    const setManualStatus = (txt) => { if(onlineStatusEl) onlineStatusEl.textContent = `Manual P2P: ${txt}`; };
+    const setSignalText = (obj) => { try{ signalBox.value=btoa(JSON.stringify(obj)); }catch(e){ signalBox.value='Encoding failed: '+(e?.message||e); } };
+    const getSignalText = () => { const raw=(signalBox.value||'').trim(); if(!raw) return null; try{ return JSON.parse(atob(raw)); }catch{ return null; } };
+
+    if (hostBtn) hostBtn.addEventListener('click', async () => {
+      try {
+        cleanupPeer(); isHost=true; myMark='X'; rtc=makePeer(); const ch=rtc.createDataChannel('moves'); bindChannel(ch);
+        const offer=await rtc.createOffer({offerToReceiveAudio:false,offerToReceiveVideo:false}); await rtc.setLocalDescription(offer); await waitIceComplete(rtc);
+        setSignalText({sdp:rtc.localDescription}); connectBtn.disabled=true; acceptBtn.disabled=false; setManualStatus('Share host code. Paste answer then Accept.');
+      } catch(e){ setManualStatus('Host error: '+(e?.message||e)); }
+    });
+
+    if (joinBtn) joinBtn.addEventListener('click', () => { cleanupPeer(); isHost=false; myMark='O'; rtc=makePeer(); rtc.ondatachannel=(ev)=>bindChannel(ev.channel); connectBtn.disabled=false; acceptBtn.disabled=true; setManualStatus('Paste host code → Connect to produce answer.'); });
+
+    if (connectBtn) connectBtn.addEventListener('click', async () => {
+      try { if(!rtc) return; const p=getSignalText(); if(!p||!p.sdp) return setManualStatus('Invalid host code');
+        await rtc.setRemoteDescription(p.sdp); const ans=await rtc.createAnswer(); await rtc.setLocalDescription(ans); await waitIceComplete(rtc); setSignalText({sdp:rtc.localDescription}); setManualStatus('Send answer to host.');
+      } catch(e){ setManualStatus('Join error: '+(e?.message||e)); }
+    });
+
+    if (acceptBtn) acceptBtn.addEventListener('click', async () => { try{ if(!rtc) return; const p=getSignalText(); if(!p||!p.sdp) return setManualStatus('Invalid answer'); await rtc.setRemoteDescription(p.sdp); setManualStatus('Answer accepted.'); }catch(e){ setManualStatus('Accept error: '+(e?.message||e)); }});
+
+    if (copyCodeBtn) copyCodeBtn.addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(signalBox.value); copyCodeBtn.textContent='Copied'; setTimeout(()=>copyCodeBtn.textContent='Copy',900); }catch{} });
+    if (disconnectBtn) disconnectBtn.addEventListener('click', ()=>{ cleanupPeer(); setManualStatus('Disconnected'); });
+
+    // ------------------- Auto signaling (Firebase) -------------------------
+    const setAutoStatus = (txt) => autoStatus.textContent = `Auto signaling: ${txt}`;
+
+    function readConfig(id){ try{ return JSON.parse(Q(id)?.textContent||'{}'); }catch{ return {}; } }
+    const fbConfig = readConfig('#firebase-config');
+
+    let db=null, FS=null; // Firestore
+    async function initFirebase(){
+      if(!fbConfig.apiKey || String(fbConfig.apiKey).includes('YOUR_')) return false;
+      try{
+        const appMod = await import('https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js');
+        FS = await import('https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js');
+        const app = appMod.initializeApp(fbConfig);
+        db = FS.getFirestore(app);
+        return true;
+      }catch(e){ setAutoStatus('failed to load SDK'); return false; }
+    }
+
+    function randRoom(){ const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<6;i++) s+=a[Math.floor(Math.random()*a.length)]; return s; }
+
+    async function autoHost(){
+      cleanupPeer(); isHost=true; myMark='X'; rtc=makePeer(); const ch=rtc.createDataChannel('moves'); bindChannel(ch);
+      const roomId = randRoom();
+      const roomRef = FS.doc(db, 'rooms', roomId);
+      const offer = await rtc.createOffer(); await rtc.setLocalDescription(offer); await waitIceComplete(rtc);
+      await FS.setDoc(roomRef, { offer: JSON.stringify(rtc.localDescription), created: Date.now() });
+
+      const callerCandidates = FS.collection(roomRef, 'callerCandidates');
+      rtc.onicecandidate = async (e) => { if(e.candidate) await FS.addDoc(callerCandidates, { c: e.candidate.toJSON() }); };
+
+      const unsub = FS.onSnapshot(roomRef, async (snap)=>{
+        const data=snap.data(); if(!data) return;
+        if(data.answer && rtc.currentRemoteDescription==null){ await rtc.setRemoteDescription(JSON.parse(data.answer)); setAutoStatus(`connected (room ${roomId})`); }
+      });
+
+      const calleeCandidates = FS.collection(roomRef, 'calleeCandidates');
+      const unsubCand = FS.onSnapshot(calleeCandidates, (qs)=>qs.docChanges().forEach(async (ch)=>{ if(ch.type==='added'){ try{ await rtc.addIceCandidate(ch.doc.data().c); }catch{} } }));
+
+      autoDisconnectBtn.onclick = async ()=>{ try{ unsub(); unsubCand(); await FS.deleteDoc(roomRef); }catch{} cleanupPeer(); setAutoStatus('Disconnected'); };
+      roomInput.value = roomId; setAutoStatus(`room ${roomId} — share code`);
+    }
+
+    async function autoJoin(){
+      const roomId = (roomInput.value||'').trim().toUpperCase(); if(!roomId) return setAutoStatus('room code required');
+      cleanupPeer(); isHost=false; myMark='O'; rtc=makePeer();
+      rtc.ondatachannel = (ev)=>bindChannel(ev.channel);
+      const roomRef = FS.doc(db, 'rooms', roomId);
+      const snap = await FS.getDoc(roomRef); if(!snap.exists()) return setAutoStatus('room not found');
+      const data = snap.data(); if(!data.offer) return setAutoStatus('invalid room');
+      await rtc.setRemoteDescription(JSON.parse(data.offer));
+      const answer = await rtc.createAnswer(); await rtc.setLocalDescription(answer); await waitIceComplete(rtc);
+      await FS.updateDoc(roomRef, { answer: JSON.stringify(rtc.localDescription), answered: Date.now() });
+
+      const calleeCandidates = FS.collection(roomRef, 'calleeCandidates');
+      rtc.onicecandidate = async (e)=>{ if(e.candidate) await FS.addDoc(calleeCandidates, { c: e.candidate.toJSON() }); };
+
+      const callerCandidates = FS.collection(roomRef, 'callerCandidates');
+      const unsubCand = FS.onSnapshot(callerCandidates, (qs)=>qs.docChanges().forEach(async (ch)=>{ if(ch.type==='added'){ try{ await rtc.addIceCandidate(ch.doc.data().c); }catch{} } }));
+
+      autoDisconnectBtn.onclick = async ()=>{ try{ unsubCand(); /* keep room for host cleanup */ }catch{} cleanupPeer(); setAutoStatus('Disconnected'); };
+      setAutoStatus(`joining room ${roomId}…`);
+    }
+
+    // Init auto mode
+    (async () => {
+      renderScores();
+      resetBoard({ keepStarter:true });
+
+      // observe status text to append role in online
+      const mo = new MutationObserver(()=>{ if(online) statusEl.textContent = `${current}'s turn — You are ${myMark}`; });
+      mo.observe(statusEl,{childList:true});
+
+      const ok = await initFirebase();
+      if(ok){
+        autoStatus.innerHTML = 'ready';
+        autoHostBtn.disabled=false; autoJoinBtn.disabled=false; autoDisconnectBtn.disabled=true;
+        autoHostBtn.onclick = autoHost; autoJoinBtn.onclick = autoJoin;
+      } else {
+        autoStatus.innerHTML = '<b>disabled</b> (add Firebase config below in the HTML to enable)';
+      }
+    })();
+  </script>
+</body>
+</html>
