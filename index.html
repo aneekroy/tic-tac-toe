@@ -253,7 +253,7 @@
     function send(m){ try{ if(dc && dc.readyState==='open') dc.send(JSON.stringify(m)); }catch{} }
     async function waitIceComplete(pc){ if(pc.iceGatheringState==='complete') return; await new Promise(res=>{ const f=()=>{ if(pc.iceGatheringState==='complete'){ pc.removeEventListener('icegatheringstatechange',f); res(); } }; pc.addEventListener('icegatheringstatechange',f); }); }
     function uiOnline(on){ if(disconnectBtn) disconnectBtn.disabled=!on; if(autoDisconnectBtn) autoDisconnectBtn.disabled=!on; }
-    function cleanupPeer(){ if(dc){try{dc.close()}catch{} dc=null;} if(rtc){try{rtc.close()}catch{} rtc=null;} online=false; uiOnline(false); }
+    function cleanupPeer(){ if(dc){try{dc.close()}catch{} dc=null;} if(rtc){try{rtc.close()}catch{} rtc=null;} online=false; uiOnline(false); roomId=null; pendingSignals.length=0; flushingSignals=false; }
 
     // --- Manual (copy‑paste) signaling -------------------------------------
     const setManualStatus = (txt) => { if(onlineStatusEl) onlineStatusEl.textContent = `Manual P2P: ${txt}`; };
@@ -282,152 +282,156 @@
     const wsConf = readConfig('#ws-config');
 
     let ws=null, roomId=null;
+    const pendingSignals=[];
+    let flushingSignals=false;
+    async function flushPendingSignals(){
+      if(flushingSignals) return;
+      if(!rtc || pendingSignals.length===0) return;
+      flushingSignals=true;
+      try{
+        while(rtc && pendingSignals.length){
+          const msg = pendingSignals.shift();
+          const ok = await processSignal(msg);
+          if(ok === false){
+            pendingSignals.push(msg);
+            if(pendingSignals.length === 1) break;
+            else continue;
+          }
+        }
+      } finally {
+        flushingSignals=false;
+      }
+    }
+    function queueSignal(msg){ if(msg.room && msg.room !== roomId) return; pendingSignals.push(msg); flushPendingSignals(); }
 
     function randRoom(){ const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<6;i++) s+=a[Math.floor(Math.random()*a.length)]; return s; }
 
-
-    async function autoHost(){
-      cleanupPeer(); isHost=true; myMark='X'; rtc=makePeer(); const ch=rtc.createDataChannel('moves'); bindChannel(ch);
-      const roomId = randRoom();
-      const roomRef = FS.doc(db, 'rooms', roomId);
-
-      const callerCandidates = FS.collection(roomRef, 'callerCandidates');
-      rtc.onicecandidate = async (e) => { if(e.candidate) await FS.addDoc(callerCandidates, { c: e.candidate.toJSON() }); };
-
-      const offer = await rtc.createOffer(); await rtc.setLocalDescription(offer); await waitIceComplete(rtc);
-      await FS.setDoc(roomRef, { offer: JSON.stringify(rtc.localDescription), created: Date.now() });
-
-      const unsub = FS.onSnapshot(roomRef, async (snap)=>{
-        const data=snap.data(); if(!data) return;
-        if(data.answer && rtc.currentRemoteDescription==null){ await rtc.setRemoteDescription(JSON.parse(data.answer)); setAutoStatus(`connected (room ${roomId})`); }
-      });
+    function wsSend(msg){
+      try{
+        if(ws && ws.readyState===1){
+          const payload = { room: roomId, ...msg };
+          ws.send(JSON.stringify(payload));
+        }
+      }catch{}
     }
 
-    function wsSend(msg){ try{ if(ws && ws.readyState===1) ws.send(JSON.stringify(msg)); }catch{} }
+    async function connectWS(code){
+      if(!wsConf || !wsConf.url){ throw new Error('missing ws-config url'); }
+      if(ws){ try{ ws.close(); }catch{} ws=null; }
+      roomId = code;
+      setAutoStatus(`room ${code} — contacting server…`);
+      return new Promise((resolve,reject)=>{
+        let settled=false;
+        const base = wsConf.url;
+        let target = base;
+        try{
+          const u = new URL(base);
+          if(!u.searchParams.has('room')) u.searchParams.set('room', code);
+          target = u.toString();
+        }catch{
+          const sep = base.includes('?')?'&':'?';
+          target = `${base}${sep}room=${encodeURIComponent(code)}`;
+        }
+        const sock = new WebSocket(target);
+        ws = sock;
+        let timer;
+        const fail = (err)=>{
+          if(!settled){ settled=true; clearTimeout(timer); if(ws === sock) ws = null; reject(err instanceof Event ? new Error('signaling connection failed') : err); }
+        };
+        timer = setTimeout(()=>fail(new Error('signaling timeout')), 10000);
+        sock.addEventListener('open', ()=>{
+          if(settled) return;
+          settled=true;
+          clearTimeout(timer);
+          const role = isHost?'host':'join';
+          wsSend({ type:'join', role });
+          wsSend({ type:'hello', role });
+          resolve();
+        });
+        sock.addEventListener('error', fail);
+        sock.addEventListener('close', ()=>{
+          if(!settled){ settled=true; clearTimeout(timer); reject(new Error('signaling closed')); }
+          if(ws === sock) ws = null;
+          cleanupPeer();
+          setAutoStatus('Disconnected');
+          autoHostBtn.disabled=false; autoJoinBtn.disabled=false; autoDisconnectBtn.disabled=true;
+        });
+        sock.addEventListener('message', (ev)=>{
+          try{ const data=JSON.parse(ev.data); queueSignal(data); }
+          catch(err){ console.warn('bad ws message', err); }
+        });
+      });
+    }
 
     async function autoHost(){
       try{
         cleanupPeer();
         isHost = true; myMark = 'X';
-        // show a code IMMEDIATELY (no waiting on ICE)
-        const roomId = (roomInput.value||'').trim().toUpperCase() || randRoom();
-        roomInput.value = roomId;
-        setAutoStatus(`room ${roomId} — creating…`);
-
+        const code = (roomInput.value||'').trim().toUpperCase() || randRoom();
+        roomInput.value = code;
+        await connectWS(code);
         rtc = makePeer();
         const ch = rtc.createDataChannel('moves');
         bindChannel(ch);
-
-        const roomRef = FS.doc(db, 'rooms', roomId);
-
-        // write local ICE candidates to subcollection
-        const callerCandidates = FS.collection(roomRef, 'callerCandidates');
-        rtc.onicecandidate = async (e)=>{
-          if(e.candidate){
-            try{ await FS.addDoc(callerCandidates, { c: e.candidate.toJSON() }); }
-            catch(err){ console.error('add caller candidate failed', err); }
-          }
-        };
-
-        // create and publish offer without blocking on ICE gather
+        rtc.onicecandidate = (e)=>{ if(e.candidate) wsSend({ type:'candidate', candidate: e.candidate.toJSON() }); };
+        await flushPendingSignals();
         const offer = await rtc.createOffer();
         await rtc.setLocalDescription(offer);
-        try{
-          await FS.setDoc(roomRef, { offer: JSON.stringify(rtc.localDescription), created: Date.now() });
-        }catch(err){
-          console.error('setDoc failed', err);
-          setAutoStatus('permission error (Firestore rules?)');
-          return;
-        }
-
-        // listen for answer
-        const unsub = FS.onSnapshot(roomRef, async (snap)=>{
-          const data=snap.data(); if(!data) return;
-          if(data.answer && rtc.currentRemoteDescription==null){
-            try{ await rtc.setRemoteDescription(JSON.parse(data.answer)); setAutoStatus(`connected (room ${roomId})`); }
-            catch(err){ console.error('setRemoteDescription failed', err); }
-          }
-        });
-
-        // read callee ICE
-        const calleeCandidates = FS.collection(roomRef, 'calleeCandidates');
-        const unsubCand = FS.onSnapshot(calleeCandidates, (qs)=>qs.docChanges().forEach(async (ch)=>{
-          if(ch.type==='added'){
-            try{ await rtc.addIceCandidate(ch.doc.data().c); }
-            catch(err){ console.error('addIceCandidate failed', err); }
-          }
-        }));
-
-        autoDisconnectBtn.disabled=false;
-        autoHostBtn.disabled=true; autoJoinBtn.disabled=true;
-        autoDisconnectBtn.onclick = async ()=>{
-          try{ unsub(); unsubCand(); await FS.deleteDoc(roomRef); }
-          catch(err){ console.warn('room cleanup error', err); }
-          cleanupPeer();
-          setAutoStatus('Disconnected');
-          autoHostBtn.disabled=false; autoJoinBtn.disabled=false; autoDisconnectBtn.disabled=true;
-        };
-
-        setAutoStatus(`room ${roomId} — share code`);
+        await waitIceComplete(rtc);
+        wsSend({ type:'offer', sdp: rtc.localDescription });
+        autoHostBtn.disabled=true; autoJoinBtn.disabled=true; autoDisconnectBtn.disabled=false;
+        setAutoStatus(`room ${code} — waiting for joiner`);
       }catch(e){
         console.error(e);
         setAutoStatus('host error: ' + (e?.message||e));
+        roomId=null;
+        autoHostBtn.disabled=false; autoJoinBtn.disabled=false; autoDisconnectBtn.disabled=true;
       }
-    }); };
-      const offer = await rtc.createOffer(); await rtc.setLocalDescription(offer); await waitIceComplete(rtc);
-      wsSend({ type:'offer', sdp: rtc.localDescription });
-      // If a joiner connects later and says hello, resend
-      setAutoStatus(`room ${roomId} — waiting for joiner`);
-      roomInput.value = roomId;
     }
 
     async function autoJoin(){
       const code = (roomInput.value||'').trim().toUpperCase();
       if(!code) { setAutoStatus('room code required'); return; }
-      cleanupPeer(); isHost=false; myMark='O'; roomId = code;
-      await connectWS(roomId);
-      rtc=makePeer();
-      rtc.ondatachannel = (ev)=>bindChannel(ev.channel);
-
-      const roomRef = FS.doc(db, 'rooms', roomId);
-      const calleeCandidates = FS.collection(roomRef, 'calleeCandidates');
-      rtc.onicecandidate = async (e)=>{ if(e.candidate) await FS.addDoc(calleeCandidates, { c: e.candidate.toJSON() }); };
-
-      const snap = await FS.getDoc(roomRef); if(!snap.exists()) return setAutoStatus('room not found');
-      const data = snap.data(); if(!data.offer) return setAutoStatus('invalid room');
-      await rtc.setRemoteDescription(JSON.parse(data.offer));
-      const answer = await rtc.createAnswer(); await rtc.setLocalDescription(answer); await waitIceComplete(rtc);
-      await FS.updateDoc(roomRef, { answer: JSON.stringify(rtc.localDescription), answered: Date.now() });
-
-      const callerCandidates = FS.collection(roomRef, 'callerCandidates');
-      const unsubCand = FS.onSnapshot(callerCandidates, (qs)=>qs.docChanges().forEach(async (ch)=>{ if(ch.type==='added'){ try{ await rtc.addIceCandidate(ch.doc.data().c); }catch{} } }));
-
-      autoDisconnectBtn.disabled=false;
-      autoHostBtn.disabled=true; autoJoinBtn.disabled=true;
-      autoDisconnectBtn.onclick = async ()=>{ try{ unsubCand(); /* keep room for host cleanup */ }catch{} cleanupPeer(); setAutoStatus('Disconnected'); autoHostBtn.disabled=false; autoJoinBtn.disabled=false; autoDisconnectBtn.disabled=true; };
-      setAutoStatus(`joining room ${roomId}…`);
+      try{
+        cleanupPeer(); isHost=false; myMark='O';
+        await connectWS(code);
+        rtc=makePeer();
+        rtc.ondatachannel = (ev)=>bindChannel(ev.channel);
+        rtc.onicecandidate = (e)=>{ if(e.candidate) wsSend({ type:'candidate', candidate: e.candidate.toJSON() }); };
+        await flushPendingSignals();
+        roomInput.value = code;
+        autoHostBtn.disabled=true; autoJoinBtn.disabled=true; autoDisconnectBtn.disabled=false;
+        setAutoStatus(`joining room ${code}…`);
+      }catch(e){
+        console.error(e);
+        setAutoStatus('join error: ' + (e?.message||e));
+        roomId=null;
+        autoHostBtn.disabled=false; autoJoinBtn.disabled=false; autoDisconnectBtn.disabled=true;
+      }
     }
 
-    async function handleSignal(msg){
-      if(!rtc) return;
+    async function processSignal(msg){
       switch(msg.type){
         case 'hello':
           if(isHost && rtc.localDescription) wsSend({ type:'offer', sdp: rtc.localDescription });
-          break;
+          return true;
         case 'offer':
           if(!isHost){
             await rtc.setRemoteDescription(msg.sdp);
+            await flushPendingSignals();
             const ans = await rtc.createAnswer(); await rtc.setLocalDescription(ans); await waitIceComplete(rtc);
             wsSend({ type:'answer', sdp: rtc.localDescription });
           }
-          break;
+          return true;
         case 'answer':
-          if(isHost && !rtc.currentRemoteDescription){ await rtc.setRemoteDescription(msg.sdp); }
-          break;
+          if(isHost && !rtc.currentRemoteDescription){ await rtc.setRemoteDescription(msg.sdp); await flushPendingSignals(); }
+          return true;
         case 'candidate':
-          try{ await rtc.addIceCandidate(msg.candidate); }catch{}
-          break;
+          if(!rtc.remoteDescription) return false;
+          try{ await rtc.addIceCandidate(new RTCIceCandidate(msg.candidate)); }catch{}
+          return true;
       }
+      return true;
     }
 
     function wireAutoUI(ok){
@@ -435,7 +439,7 @@
       else { autoStatus.innerHTML='<b>disabled</b> (set ws-config URL in HTML)'; }
       autoHostBtn.onclick = async ()=>{ try{ await autoHost(); autoDisconnectBtn.disabled=false; }catch(e){ setAutoStatus('host error'); } };
       autoJoinBtn.onclick = async ()=>{ try{ await autoJoin(); autoDisconnectBtn.disabled=false; }catch(e){ setAutoStatus('join error'); } };
-      autoDisconnectBtn.onclick = ()=>{ try{ ws && ws.close(); }catch{} cleanupPeer(); setAutoStatus('Disconnected'); };
+      autoDisconnectBtn.onclick = ()=>{ try{ ws && ws.close(); }catch{} cleanupPeer(); setAutoStatus('Disconnected'); autoHostBtn.disabled=false; autoJoinBtn.disabled=false; autoDisconnectBtn.disabled=true; };
     }
 
     // Init
